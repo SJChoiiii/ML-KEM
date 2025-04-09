@@ -31,14 +31,6 @@
 
 
 
-void rand2(uint8_t* buf, int len)
-{
-    for (int i = 0; i < len; i++) {
-        buf[i] = i;
-    }
-}
-
-
 const int16_t PQCLEAN_MLKEM512_CLEAN_zetas[128] = {
     -1044,  -758,  -359, -1517,  1493,  1422,   287,   202,
     -171,   622,  1577,   182,   962, -1202, -1474,  1468,
@@ -57,7 +49,6 @@ const int16_t PQCLEAN_MLKEM512_CLEAN_zetas[128] = {
     -1185, -1530, -1278,   794, -1510,  -854,  -870,   478,
     -108,  -308,   996,   991,   958, -1460,  1522,  1628
 };
-
 static const uint64_t KeccakF_RoundConstants[NROUNDS] = {
     0x0000000000000001ULL, 0x0000000000008082ULL,
     0x800000000000808aULL, 0x8000000080008000ULL,
@@ -72,6 +63,30 @@ static const uint64_t KeccakF_RoundConstants[NROUNDS] = {
     0x8000000080008081ULL, 0x8000000000008080ULL,
     0x0000000080000001ULL, 0x8000000080008008ULL
 };
+
+
+
+void rand2(uint8_t* buf, int len)
+{
+    for (int i = 0; i < len; i++) {
+        buf[i] = i;
+    }
+}
+void PQCLEAN_MLKEM512_CLEAN_cmov(uint8_t *r, const uint8_t *x, size_t len, uint8_t b) {
+    size_t i;
+
+    PQCLEAN_PREVENT_BRANCH_HACK(b);
+
+    b = -b;
+    for (i = 0; i < len; i++) {
+        r[i] ^= b & (r[i] ^ x[i]);
+    }
+}
+void PQCLEAN_MLKEM512_CLEAN_cmov_int16(int16_t *r, int16_t v, uint16_t b) {
+    b = -b;
+    *r ^= b & ((*r) ^ v);
+}
+
 
 
 static uint32_t load24_littleendian(const uint8_t x[3]) {
@@ -102,6 +117,7 @@ static void store64(uint8_t *x, uint64_t u) {
         x[i] = (uint8_t) (u >> 8 * i);
     }
 }
+
 
 
 static void KeccakF1600_StatePermute(uint64_t *state) {
@@ -366,8 +382,6 @@ static void KeccakF1600_StatePermute(uint64_t *state) {
     state[23] = Aso;
     state[24] = Asu;
 }
-
-
 static void keccak_absorb(uint64_t *s, uint32_t r, const uint8_t *m,size_t mlen, uint8_t p) 
 {
     size_t i;
@@ -400,7 +414,6 @@ static void keccak_absorb(uint64_t *s, uint32_t r, const uint8_t *m,size_t mlen,
         s[i] ^= load64(t + 8 * i);
     }
 }
-
 static void keccak_squeezeblocks(uint8_t *h, size_t nblocks, uint64_t *s, uint32_t r) {
     while (nblocks > 0) {
         KeccakF1600_StatePermute(s);
@@ -411,10 +424,20 @@ static void keccak_squeezeblocks(uint8_t *h, size_t nblocks, uint64_t *s, uint32
         nblocks--;
     }
 }
+
+void shake128_absorb(shake128ctx *state, const uint8_t *input, size_t inlen) {
+    state->ctx = malloc(PQC_SHAKECTX_BYTES);
+    if (state->ctx == NULL) {
+        exit(111);
+    }
+    keccak_absorb(state->ctx, SHAKE128_RATE, input, inlen, 0x1F);
+}
+void shake128_ctx_release(shake128ctx *state) {
+    free(state->ctx);
+}
 void shake128_squeezeblocks(uint8_t *output, size_t nblocks, shake128ctx *state) {
     keccak_squeezeblocks(output, nblocks, state->ctx, SHAKE128_RATE);
 }
-
 void shake256_absorb(shake256ctx *state, const uint8_t *input, size_t inlen) {
     state->ctx = malloc(PQC_SHAKECTX_BYTES);
     if (state->ctx == NULL) {
@@ -515,6 +538,8 @@ void shake256_inc_ctx_release(shake256incctx *state) {
     free(state->ctx);
 }
 
+
+
 void shake256(uint8_t *output, size_t outlen, const uint8_t *input, size_t inlen) {
     size_t nblocks = outlen / SHAKE256_RATE;
     uint8_t t[SHAKE256_RATE];
@@ -534,7 +559,6 @@ void shake256(uint8_t *output, size_t outlen, const uint8_t *input, size_t inlen
     }
     shake256_ctx_release(&s);
 }
-
 
 void sha3_256(uint8_t *output, const uint8_t *input, size_t inlen) {
     uint64_t s[25];
@@ -564,16 +588,8 @@ void sha3_512(uint8_t *output, const uint8_t *input, size_t inlen) {
         output[i] = t[i];
     }
 }
-void shake128_absorb(shake128ctx *state, const uint8_t *input, size_t inlen) {
-    state->ctx = malloc(PQC_SHAKECTX_BYTES);
-    if (state->ctx == NULL) {
-        exit(111);
-    }
-    keccak_absorb(state->ctx, SHAKE128_RATE, input, inlen, 0x1F);
-}
-void shake128_ctx_release(shake128ctx *state) {
-    free(state->ctx);
-}
+
+
 void PQCLEAN_MLKEM512_CLEAN_kyber_shake256_prf(uint8_t *out, size_t outlen, const uint8_t key[KYBER_SYMBYTES], uint8_t nonce) {
     uint8_t extkey[KYBER_SYMBYTES + 1];
 
@@ -592,8 +608,6 @@ void PQCLEAN_MLKEM512_CLEAN_kyber_shake256_rkprf(uint8_t out[KYBER_SSBYTES], con
     shake256_inc_squeeze(out, KYBER_SSBYTES, &s);
     shake256_inc_ctx_release(&s);
 }
-
-
 
 void PQCLEAN_MLKEM512_CLEAN_kyber_shake128_absorb(xof_state *state, const uint8_t seed[KYBER_SYMBYTES], uint8_t x, uint8_t y) {
     uint8_t extseed[KYBER_SYMBYTES + 2];
@@ -682,7 +696,6 @@ static unsigned int rej_uniform(int16_t *r, unsigned int len, const uint8_t *buf
     return ctr;
 }
 
-
 void PQCLEAN_MLKEM512_CLEAN_gen_matrix(polyvec *a, const uint8_t seed[KYBER_SYMBYTES], int transposed) {
     unsigned int ctr, i, j;
     unsigned int buflen;
@@ -710,24 +723,6 @@ void PQCLEAN_MLKEM512_CLEAN_gen_matrix(polyvec *a, const uint8_t seed[KYBER_SYMB
         }
     }
 }
-
-
-void PQCLEAN_MLKEM512_CLEAN_cmov(uint8_t *r, const uint8_t *x, size_t len, uint8_t b) {
-    size_t i;
-
-    PQCLEAN_PREVENT_BRANCH_HACK(b);
-
-    b = -b;
-    for (i = 0; i < len; i++) {
-        r[i] ^= b & (r[i] ^ x[i]);
-    }
-}
-
-void PQCLEAN_MLKEM512_CLEAN_cmov_int16(int16_t *r, int16_t v, uint16_t b) {
-    b = -b;
-    *r ^= b & ((*r) ^ v);
-}
-
 
 
 
@@ -882,6 +877,7 @@ void PQCLEAN_MLKEM512_CLEAN_polyvec_decompress(polyvec *r, const uint8_t a[KYBER
 }
 
 
+
 static void pack_pk(uint8_t r[KYBER_INDCPA_PUBLICKEYBYTES], polyvec *pk, const uint8_t seed[KYBER_SYMBYTES]) {
     PQCLEAN_MLKEM512_CLEAN_polyvec_tobytes(r, pk);
     memcpy(r + KYBER_POLYVECBYTES, seed, KYBER_SYMBYTES);
@@ -908,6 +904,7 @@ static void unpack_ciphertext(polyvec *b, poly *v, const uint8_t c[KYBER_INDCPA_
 }
 
 
+
 int16_t PQCLEAN_MLKEM512_CLEAN_montgomery_reduce(int32_t a) {
     int16_t t;
 
@@ -915,7 +912,6 @@ int16_t PQCLEAN_MLKEM512_CLEAN_montgomery_reduce(int32_t a) {
     t = (a - (int32_t)t * KYBER_Q) >> 16;
     return t;
 }
-
 int16_t PQCLEAN_MLKEM512_CLEAN_barrett_reduce(int16_t a) {
     int16_t t;
     const int16_t v = ((1 << 26) + KYBER_Q / 2) / KYBER_Q;
@@ -924,11 +920,18 @@ int16_t PQCLEAN_MLKEM512_CLEAN_barrett_reduce(int16_t a) {
     t *= KYBER_Q;
     return a - t;
 }
-
-
 static int16_t fqmul(int16_t a, int16_t b) {
     return PQCLEAN_MLKEM512_CLEAN_montgomery_reduce((int32_t)a * b);
 }
+
+void PQCLEAN_MLKEM512_CLEAN_poly_tomont(poly *r) {
+    size_t i;
+    const int16_t f = (1ULL << 32) % KYBER_Q;
+    for (i = 0; i < KYBER_N; i++) {
+        r->coeffs[i] = PQCLEAN_MLKEM512_CLEAN_montgomery_reduce((int32_t)r->coeffs[i] * f);
+    }
+}
+
 
 void PQCLEAN_MLKEM512_CLEAN_ntt(int16_t r[256]) {
     unsigned int len, start, j, k;
@@ -947,14 +950,12 @@ void PQCLEAN_MLKEM512_CLEAN_ntt(int16_t r[256]) {
     }
 }
 
-
 void PQCLEAN_MLKEM512_CLEAN_poly_reduce(poly *r) {
     size_t i;
     for (i = 0; i < KYBER_N; i++) {
         r->coeffs[i] = PQCLEAN_MLKEM512_CLEAN_barrett_reduce(r->coeffs[i]);
     }
 }
-
 void PQCLEAN_MLKEM512_CLEAN_polyvec_reduce(polyvec *r) {
     unsigned int i;
     for (i = 0; i < KYBER_K; i++) {
@@ -966,7 +967,6 @@ void PQCLEAN_MLKEM512_CLEAN_poly_ntt(poly *r) {
     PQCLEAN_MLKEM512_CLEAN_ntt(r->coeffs);
     PQCLEAN_MLKEM512_CLEAN_poly_reduce(r);
 }
-
 void PQCLEAN_MLKEM512_CLEAN_polyvec_ntt(polyvec *r) {
     unsigned int i;
     for (i = 0; i < KYBER_K; i++) {
@@ -980,11 +980,17 @@ void PQCLEAN_MLKEM512_CLEAN_poly_add(poly *r, const poly *a, const poly *b) {
         r->coeffs[i] = a->coeffs[i] + b->coeffs[i];
     }
 }
-
 void PQCLEAN_MLKEM512_CLEAN_polyvec_add(polyvec *r, const polyvec *a, const polyvec *b) {
     unsigned int i;
     for (i = 0; i < KYBER_K; i++) {
         PQCLEAN_MLKEM512_CLEAN_poly_add(&r->vec[i], &a->vec[i], &b->vec[i]);
+    }
+}
+
+void PQCLEAN_MLKEM512_CLEAN_poly_sub(poly *r, const poly *a, const poly *b) {
+    size_t i;
+    for (i = 0; i < KYBER_N; i++) {
+        r->coeffs[i] = a->coeffs[i] - b->coeffs[i];
     }
 }
 
@@ -996,7 +1002,6 @@ void PQCLEAN_MLKEM512_CLEAN_basemul(int16_t r[2], const int16_t a[2], const int1
     r[1]  = fqmul(a[0], b[1]);
     r[1] += fqmul(a[1], b[0]);
 }
-
 void PQCLEAN_MLKEM512_CLEAN_poly_basemul_montgomery(poly *r, const poly *a, const poly *b) {
     size_t i;
     for (i = 0; i < KYBER_N / 4; i++) {
@@ -1004,7 +1009,6 @@ void PQCLEAN_MLKEM512_CLEAN_poly_basemul_montgomery(poly *r, const poly *a, cons
         PQCLEAN_MLKEM512_CLEAN_basemul(&r->coeffs[4 * i + 2], &a->coeffs[4 * i + 2], &b->coeffs[4 * i + 2], -PQCLEAN_MLKEM512_CLEAN_zetas[64 + i]);
     }
 }
-
 void PQCLEAN_MLKEM512_CLEAN_polyvec_basemul_acc_montgomery(poly *r, const polyvec *a, const polyvec *b) {
     unsigned int i;
     poly t;
@@ -1018,20 +1022,8 @@ void PQCLEAN_MLKEM512_CLEAN_polyvec_basemul_acc_montgomery(poly *r, const polyve
     PQCLEAN_MLKEM512_CLEAN_poly_reduce(r);
 }
 
-void PQCLEAN_MLKEM512_CLEAN_poly_tomont(poly *r) {
-    size_t i;
-    const int16_t f = (1ULL << 32) % KYBER_Q;
-    for (i = 0; i < KYBER_N; i++) {
-        r->coeffs[i] = PQCLEAN_MLKEM512_CLEAN_montgomery_reduce((int32_t)r->coeffs[i] * f);
-    }
-}
 
-void PQCLEAN_MLKEM512_CLEAN_poly_sub(poly *r, const poly *a, const poly *b) {
-    size_t i;
-    for (i = 0; i < KYBER_N; i++) {
-        r->coeffs[i] = a->coeffs[i] - b->coeffs[i];
-    }
-}
+
 
 
 void PQCLEAN_MLKEM512_CLEAN_invntt(int16_t r[256]) {
@@ -1057,7 +1049,6 @@ void PQCLEAN_MLKEM512_CLEAN_invntt(int16_t r[256]) {
     }
 }
 
-
 void PQCLEAN_MLKEM512_CLEAN_poly_invntt_tomont(poly *r) {
     PQCLEAN_MLKEM512_CLEAN_invntt(r->coeffs);
 }
@@ -1067,6 +1058,7 @@ void PQCLEAN_MLKEM512_CLEAN_polyvec_invntt_tomont(polyvec *r) {
         PQCLEAN_MLKEM512_CLEAN_poly_invntt_tomont(&r->vec[i]);
     }
 }
+
 
 
 int PQCLEAN_MLKEM512_CLEAN_verify(const uint8_t *a, const uint8_t *b, size_t len) {
@@ -1254,9 +1246,6 @@ int PQCLEAN_MLKEM512_CLEAN_crypto_kem_dec(uint8_t *ss, const uint8_t *ct, const 
 
     return 0;
 }
-
-
-
 
 
 
