@@ -1171,6 +1171,8 @@ void PQCLEAN_MLKEM512_CLEAN_indcpa_dec(uint8_t m[KYBER_INDCPA_MSGBYTES], const u
     PQCLEAN_MLKEM512_CLEAN_poly_tomsg(m, &mp);
 }
 
+
+
 int PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair_derand(uint8_t *pk, uint8_t *sk, const uint8_t *coins) 
 {
     PQCLEAN_MLKEM512_CLEAN_indcpa_keypair_derand(pk, sk, coins);
@@ -1178,6 +1180,13 @@ int PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair_derand(uint8_t *pk, uint8_t *sk, c
     hash_h(sk + KYBER_SECRETKEYBYTES - 2 * KYBER_SYMBYTES, pk, KYBER_PUBLICKEYBYTES);
     /* Value z for pseudo-random output on reject */
     memcpy(sk + KYBER_SECRETKEYBYTES - KYBER_SYMBYTES, coins + KYBER_SYMBYTES, KYBER_SYMBYTES);
+    return 0;
+}
+int PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair(uint8_t *pk, uint8_t *sk) 
+{
+    uint8_t coins[2 * KYBER_SYMBYTES];
+    randombytes(coins, 2 * KYBER_SYMBYTES);
+    PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair_derand(pk, sk, coins);
     return 0;
 }
 
@@ -1199,17 +1208,6 @@ int PQCLEAN_MLKEM512_CLEAN_crypto_kem_enc_derand(uint8_t *ct, uint8_t *ss, const
     memcpy(ss, kr, KYBER_SYMBYTES);
     return 0;
 }
-
-
-
-int PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair(uint8_t *pk, uint8_t *sk) 
-{
-    uint8_t coins[2 * KYBER_SYMBYTES];
-    randombytes(coins, 2 * KYBER_SYMBYTES);
-    PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair_derand(pk, sk, coins);
-    return 0;
-}
-
 int PQCLEAN_MLKEM512_CLEAN_crypto_kem_enc(uint8_t *ct, uint8_t *ss, const uint8_t *pk) 
 {
     uint8_t coins[KYBER_SYMBYTES];
