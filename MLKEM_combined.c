@@ -82,9 +82,9 @@ void PQCLEAN_MLKEM512_CLEAN_cmov(uint8_t *r, const uint8_t *x, size_t len, uint8
         r[i] ^= b & (r[i] ^ x[i]);
     }
 }
-void PQCLEAN_MLKEM512_CLEAN_cmov_int16(int16_t *r, int16_t v, uint16_t b) {
-    b = -b;
-    *r ^= b & ((*r) ^ v);
+void PQCLEAN_MLKEM512_CLEAN_cmov_int16(int16_t *r, int16_t v, uint16_t b) { // coef, ( q+1 / 2 ), msg bit
+    b = -b;                 // bit를 0 -> 0 또는 1 -> -1(0b1111111111111111)로 가져와서
+    *r ^= b & ((*r) ^ v);   //  r = r ^ (b & ((*r) ^ v)) 
 }
 
 
@@ -726,7 +726,8 @@ void PQCLEAN_MLKEM512_CLEAN_gen_matrix(polyvec *a, const uint8_t seed[KYBER_SYMB
 
 
 
-void PQCLEAN_MLKEM512_CLEAN_poly_tobytes(uint8_t r[KYBER_POLYBYTES], const poly *a) {
+void PQCLEAN_MLKEM512_CLEAN_poly_tobytes(uint8_t r[KYBER_POLYBYTES], const poly *a) 
+{
     size_t i;
     uint16_t t0, t1;
 
@@ -781,13 +782,13 @@ void PQCLEAN_MLKEM512_CLEAN_poly_tomsg(uint8_t msg[KYBER_INDCPA_MSGBYTES], const
         }
     }
 }
-void PQCLEAN_MLKEM512_CLEAN_poly_frommsg(poly *r, const uint8_t msg[KYBER_INDCPA_MSGBYTES]) {
+void PQCLEAN_MLKEM512_CLEAN_poly_frommsg(poly *r, const uint8_t msg[KYBER_INDCPA_MSGBYTES]) { // m을 m*로 변경해주는 함수 -> 0 : 0, 1 : ( (q + 1) / 2 )
     size_t i, j;
 
     for (i = 0; i < KYBER_N / 8; i++) {
         for (j = 0; j < 8; j++) {
-            r->coeffs[8 * i + j] = 0;
-            PQCLEAN_MLKEM512_CLEAN_cmov_int16(r->coeffs + 8 * i + j, ((KYBER_Q + 1) / 2), (msg[i] >> j) & 1);
+            r->coeffs[8 * i + j] = 0;   // 다항식의 한 계수에
+            PQCLEAN_MLKEM512_CLEAN_cmov_int16(r->coeffs + 8 * i + j, ((KYBER_Q + 1) / 2), (msg[i] >> j) & 1); // coef, ( q+1 / 2 ), msg bit
         }
     }
 }
@@ -880,7 +881,7 @@ void PQCLEAN_MLKEM512_CLEAN_polyvec_decompress(polyvec *r, const uint8_t a[KYBER
 
 static void pack_pk(uint8_t r[KYBER_INDCPA_PUBLICKEYBYTES], polyvec *pk, const uint8_t seed[KYBER_SYMBYTES]) {
     PQCLEAN_MLKEM512_CLEAN_polyvec_tobytes(r, pk);
-    memcpy(r + KYBER_POLYVECBYTES, seed, KYBER_SYMBYTES);
+    memcpy(r + KYBER_POLYVECBYTES, seed, KYBER_SYMBYTES);   // pk뒤에 seed값 연접
 }
 static void pack_sk(uint8_t r[KYBER_INDCPA_SECRETKEYBYTES], polyvec *sk) {
     PQCLEAN_MLKEM512_CLEAN_polyvec_tobytes(r, sk);
@@ -938,13 +939,13 @@ void PQCLEAN_MLKEM512_CLEAN_ntt(int16_t r[256]) {
     int16_t t, zeta;
 
     k = 1;
-    for (len = 128; len >= 2; len >>= 1) {
-        for (start = 0; start < 256; start = j + len) {
-            zeta = PQCLEAN_MLKEM512_CLEAN_zetas[k++];
-            for (j = start; j < start + len; j++) {
-                t = fqmul(zeta, r[j + len]);
-                r[j + len] = r[j] - t;
-                r[j] = r[j] + t;
+    for (len = 128; len >= 2; len >>= 1) {                  // 각 값의 쌍의 거리를 알려주는 index
+        for (start = 0; start < 256; start = j + len) {     // 현재 Layer에 있는 group의 첫 시작 값을 
+            zeta = PQCLEAN_MLKEM512_CLEAN_zetas[k++];       // 각 group에 맞는 zeta값을 가져와서 
+            for (j = start; j < start + len; j++) {         // 해당 group에 대해서서
+                t = fqmul(zeta, r[j + len]);                // t = b * zeta
+                r[j + len] = r[j] - t;                      // b = a - b * zeta
+                r[j] = r[j] + t;                            // a = a + b * zeta
             }
         }
     }
@@ -1083,33 +1084,34 @@ void PQCLEAN_MLKEM512_CLEAN_indcpa_keypair_derand(uint8_t pk[KYBER_INDCPA_PUBLIC
     uint8_t nonce = 0;
     polyvec a[KYBER_K], e, pkpv, skpv;
 
-    memcpy(buf, coins, KYBER_SYMBYTES);
-    buf[KYBER_SYMBYTES] = KYBER_K;
-    hash_g(buf, buf, KYBER_SYMBYTES + 1);
-
-    gen_a(a, publicseed);
+    memcpy(buf, coins, KYBER_SYMBYTES);     // Kyber에서는 indcpa_keypair부분에서 random값을 생성했지만, ML-KEM에서는 이전에 coin값에 random값을 넣어놓고 그대로 사용함
+    buf[KYBER_SYMBYTES] = KYBER_K;          // Kyber에서는 buf[0~31]까지만 채우고 G함수를 이용 but ML-KEM에서는 buf[32]에 Kyber_K값을 넣어주고
+    hash_g(buf, buf, KYBER_SYMBYTES + 1);   // 32개의 값을 G함수에 넣는게 아니라 33개의 값을 G 함수에 넣어서 이용함
+                                            // G 함수(SHA3_512)로 랜덤값을 Seed로 만들어줌 -> SHA3_512의 앞 32byte를 공개키의 seed값, 뒤 32byte를 noise의 seed값 으로 사용
+    
+    gen_a(a, publicseed);                   // Kyber와 마찬가지로 NTT도메인에 올라간 상태로 a행렬 생성
 
     for (i = 0; i < KYBER_K; i++) {
         PQCLEAN_MLKEM512_CLEAN_poly_getnoise_eta1(&skpv.vec[i], noiseseed, nonce++);
-    }
+    }   // 비밀키 s 생성
     for (i = 0; i < KYBER_K; i++) {
         PQCLEAN_MLKEM512_CLEAN_poly_getnoise_eta1(&e.vec[i], noiseseed, nonce++);
-    }
+    }   // 에러 다항식 e 생성
 
-    PQCLEAN_MLKEM512_CLEAN_polyvec_ntt(&skpv);
-    PQCLEAN_MLKEM512_CLEAN_polyvec_ntt(&e);
+    PQCLEAN_MLKEM512_CLEAN_polyvec_ntt(&skpv);  // s를 NTT 변환
+    PQCLEAN_MLKEM512_CLEAN_polyvec_ntt(&e);     // e를 NTT 변환
 
     // matrix-vector multiplication
     for (i = 0; i < KYBER_K; i++) {
-        PQCLEAN_MLKEM512_CLEAN_polyvec_basemul_acc_montgomery(&pkpv.vec[i], &a[i], &skpv);
-        PQCLEAN_MLKEM512_CLEAN_poly_tomont(&pkpv.vec[i]);
-    }
+        PQCLEAN_MLKEM512_CLEAN_polyvec_basemul_acc_montgomery(&pkpv.vec[i], &a[i], &skpv);  
+        PQCLEAN_MLKEM512_CLEAN_poly_tomont(&pkpv.vec[i]);                                   
+    }   // as = A * s
 
-    PQCLEAN_MLKEM512_CLEAN_polyvec_add(&pkpv, &pkpv, &e);
-    PQCLEAN_MLKEM512_CLEAN_polyvec_reduce(&pkpv);
+    PQCLEAN_MLKEM512_CLEAN_polyvec_add(&pkpv, &pkpv, &e);   // as + e
+    PQCLEAN_MLKEM512_CLEAN_polyvec_reduce(&pkpv);           // mod q
 
-    pack_sk(sk, &skpv);
-    pack_pk(pk, &pkpv, publicseed);
+    pack_sk(sk, &skpv);                                     // sk encode -> 바이트 배열로 저장
+    pack_pk(pk, &pkpv, publicseed);                         // pk encode -> pk : A*s + e (768)  |  A행렬을 생성하는 seed값 (32)
 }
 
 void PQCLEAN_MLKEM512_CLEAN_indcpa_enc(uint8_t c[KYBER_INDCPA_BYTES], const uint8_t m[KYBER_INDCPA_MSGBYTES], const uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES], const uint8_t coins[KYBER_SYMBYTES]) 
@@ -1121,7 +1123,8 @@ void PQCLEAN_MLKEM512_CLEAN_indcpa_enc(uint8_t c[KYBER_INDCPA_BYTES], const uint
     poly v, k, epp;
 
     unpack_pk(&pkpv, seed, pk);
-    PQCLEAN_MLKEM512_CLEAN_poly_frommsg(&k, m);
+    
+    PQCLEAN_MLKEM512_CLEAN_poly_frommsg(&k, m); //m의 값(message)을 k = m* 값(polynomial)로 변경, (Decompress_q(Decode_1(m), 1) 과정)
     gen_at(at, seed);
 
     for (i = 0; i < KYBER_K; i++) {
@@ -1172,20 +1175,20 @@ void PQCLEAN_MLKEM512_CLEAN_indcpa_dec(uint8_t m[KYBER_INDCPA_MSGBYTES], const u
 }
 
 
-
+// 실질적인 ML-KEM의 KEM-KEYPAIR 함수라고 생각하면 됨
 int PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair_derand(uint8_t *pk, uint8_t *sk, const uint8_t *coins) 
 {
     PQCLEAN_MLKEM512_CLEAN_indcpa_keypair_derand(pk, sk, coins);
-    memcpy(sk + KYBER_INDCPA_SECRETKEYBYTES, pk, KYBER_PUBLICKEYBYTES);
-    hash_h(sk + KYBER_SECRETKEYBYTES - 2 * KYBER_SYMBYTES, pk, KYBER_PUBLICKEYBYTES);
+    memcpy(sk + KYBER_INDCPA_SECRETKEYBYTES, pk, KYBER_PUBLICKEYBYTES);                 // sk에 pk 연접
+    hash_h(sk + KYBER_SECRETKEYBYTES - 2 * KYBER_SYMBYTES, pk, KYBER_PUBLICKEYBYTES);   // sk에 H(pk) 연접
     /* Value z for pseudo-random output on reject */
-    memcpy(sk + KYBER_SECRETKEYBYTES - KYBER_SYMBYTES, coins + KYBER_SYMBYTES, KYBER_SYMBYTES);
+    memcpy(sk + KYBER_SECRETKEYBYTES - KYBER_SYMBYTES, coins + KYBER_SYMBYTES, KYBER_SYMBYTES); // sk에 random 값 z 연접
     return 0;
 }
 int PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair(uint8_t *pk, uint8_t *sk) 
 {
-    uint8_t coins[2 * KYBER_SYMBYTES];
-    randombytes(coins, 2 * KYBER_SYMBYTES);
+    uint8_t coins[2 * KYBER_SYMBYTES];          // random 값 저장하기 위한 coin값 추가
+    randombytes(coins, 2 * KYBER_SYMBYTES);     // random 값 생성
     PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair_derand(pk, sk, coins);
     return 0;
 }
@@ -1198,14 +1201,20 @@ int PQCLEAN_MLKEM512_CLEAN_crypto_kem_enc_derand(uint8_t *ct, uint8_t *ss, const
 
     memcpy(buf, coins, KYBER_SYMBYTES);
 
+    // H(m)하는 ssk의 seed의 seed를 통해 ssk seed를 생성하는 과정이 사라짐
+    // 즉, ssk의 seed는 random값 그대로임
+
+    
     /* Multitarget countermeasure for coins + contributory KEM */
-    hash_h(buf + KYBER_SYMBYTES, pk, KYBER_PUBLICKEYBYTES);
-    hash_g(kr, buf, 2 * KYBER_SYMBYTES);
+    hash_h(buf + KYBER_SYMBYTES, pk, KYBER_PUBLICKEYBYTES); // H(pk)를 생성
+    hash_g(kr, buf, 2 * KYBER_SYMBYTES);                    // ssk seed, H(pk)를 연접하여 ssk || r 생성
 
     /* coins are in kr+KYBER_SYMBYTES */
-    PQCLEAN_MLKEM512_CLEAN_indcpa_enc(ct, buf, pk, kr + KYBER_SYMBYTES);
+    PQCLEAN_MLKEM512_CLEAN_indcpa_enc(ct, buf, pk, kr + KYBER_SYMBYTES); // ciphertext 생성, buf : ssk seed || H(pk),  pk : t || a seed,  kr + 32 : r = G(H(pk))
 
-    memcpy(ss, kr, KYBER_SYMBYTES);
+    // ciphertext의 해시값을 생성하여 KDF를 이용해 ssk를 뽑아내는 과정 삭제
+
+    memcpy(ss, kr, KYBER_SYMBYTES); // ss에 ssk 저장
     return 0;
 }
 int PQCLEAN_MLKEM512_CLEAN_crypto_kem_enc(uint8_t *ct, uint8_t *ss, const uint8_t *pk) 
