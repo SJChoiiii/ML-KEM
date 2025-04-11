@@ -25,6 +25,7 @@
 
 #define XOF_BLOCKBYTES SHAKE128_RATE
 
+// 컴파일러가 0 또는 1 값을 추론하여 분기문을 사용하지 않도록 방지하기 위한 목적으로 추가된 코드
 #define PQCLEAN_PREVENT_BRANCH_HACK(b)  __asm__("" : "+r"(b) : /* no inputs */);
 
 #define randombytes(OUT, OUTLEN) rand2(OUT, OUTLEN)
@@ -75,16 +76,22 @@ void rand2(uint8_t* buf, int len)
 void PQCLEAN_MLKEM512_CLEAN_cmov(uint8_t *r, const uint8_t *x, size_t len, uint8_t b) {
     size_t i;
 
+    // 함수의 입력에서 b = 1 - fail 이므로 c = c' 인 경우  b = 1, 아니라면 b = 0 가 됨
+
+    // 컴파일러가 0 또는 1 값을 추론하여 분기문을 사용하지 않도록 방지하기 위한 목적으로 추가된 코드
+    // 브랜치 예측 공격을 방지하려는 최적화 기법으로, 분기 예측을 방지하고, 연산을 더 안정적으로 수행하려는 목적입니다.
     PQCLEAN_PREVENT_BRANCH_HACK(b);
+
+
 
     b = -b;
     for (i = 0; i < len; i++) {
-        r[i] ^= b & (r[i] ^ x[i]);
+        r[i] ^= b & (r[i] ^ x[i]);  // b가 1(fail = 0) 이라면 ss에 true key K를, b가 0(fail = 1) 이라면 rejection key ss를 그대로 사용함
     }
 }
 void PQCLEAN_MLKEM512_CLEAN_cmov_int16(int16_t *r, int16_t v, uint16_t b) { // coef, ( q+1 / 2 ), msg bit
     b = -b;                 // bit를 0 -> 0 또는 1 -> -1(0b1111111111111111)로 가져와서
-    *r ^= b & ((*r) ^ v);   //  r = r ^ (b & ((*r) ^ v)) 
+    *r ^= b & ((*r) ^ v);   // r값에 v(q + 1 / 2)를 그대로 가져와서 b랑 합치는 과정 즉,   0 -> 0, 1 -> ( q + 1 / 2 ) 로 변경
 }
 
 
@@ -773,12 +780,12 @@ void PQCLEAN_MLKEM512_CLEAN_poly_tomsg(uint8_t msg[KYBER_INDCPA_MSGBYTES], const
             t  = a->coeffs[8 * i + j];
             // t += ((int16_t)t >> 15) & KYBER_Q;
             // t  = (((t << 1) + KYBER_Q/2)/KYBER_Q) & 1;
-            t <<= 1;
-            t += 1665;
-            t *= 80635;
-            t >>= 28;
-            t &= 1;
-            msg[i] |= t << j;
+            t <<= 1;            // 1bit로 압축할거니까 1bit 올려주고
+            t += 1665;          // 반올림
+            t *= 80635;         // / q 대신해서 * 80635
+            t >>= 28;           // / 2*28 로 / q 와 비슷한 연산을 진행해주고
+            t &= 1;             // 맨 마지막 1bit만 남겨주기
+            msg[i] |= t << j;   // 해당하는 값을 msg[i]에 저장하기
         }
     }
 }
@@ -803,14 +810,25 @@ void PQCLEAN_MLKEM512_CLEAN_poly_compress(uint8_t r[KYBER_POLYCOMPRESSEDBYTES], 
     for (i = 0; i < KYBER_N / 8; i++) {
         for (j = 0; j < 8; j++) {
             // map to positive standard representatives
-            u  = a->coeffs[8 * i + j];
-            u += (u >> 15) & KYBER_Q;
+            u  = a->coeffs[8 * i + j];      // 계수를 가져와서          -q/2 ~ q/2
+            u += (u >> 15) & KYBER_Q;       // 계수의 범위를 양수로 변경    0 ~ q - 1
+            
             /*    t[j] = ((((uint16_t)u << 4) + KYBER_Q/2)/KYBER_Q) & 15; */
-            d0 = u << 4;
-            d0 += 1665;
-            d0 *= 80635;
-            d0 >>= 28;
-            t[j] = d0 & 0xf;
+            
+            
+            d0 = u << 4;    // 32bit에 12bit를 4bit 왼쪽으로 shift 한 값을 저장
+            d0 += 1665;     // 반올림을 위해 q + 2 / 2 값을 더해주기
+            
+            // / kyber_q 대신 아래 2개를 진행해 줌
+            // q * 80635의 값은 2^28보다 작은 가장 큰 q의 곱 모양임 -> coef 값을 가장 32bit에 가깝도록 함
+            // 실직적으로 kyber_q 로 나누어 주는 것과 차이가 나는 부분은
+            // kyber    :    0 ~ 104 : 0,  105 ~ 312 : 1, ... , 3017 ~ 3224 : 15, 3225 ~ 3328 : 0
+            // ML-KEM   :    0 ~ 103 : 0,  104 ~ 312 : 1, ... , 3017 ~ 3224 : 15, 3225 ~ 3328 : 0
+            // 으로 0을 의미하는 숫자의 갯수가 1개 줄어든 차이밖에 없음
+            d0 *= 80635;    
+            d0 >>= 28;      
+            
+            t[j] = d0 & 0xf; // 하위 4BIT 가져오기
         }
 
         r[0] = t[0] | (t[1] << 4);
@@ -830,12 +848,20 @@ void PQCLEAN_MLKEM512_CLEAN_polyvec_compress(uint8_t r[KYBER_POLYVECCOMPRESSEDBY
             for (k = 0; k < 4; k++) {
                 t[k]  = a->vec[i].coeffs[4 * j + k];
                 t[k] += ((int16_t)t[k] >> 15) & KYBER_Q;
+                
                 /*      t[k]  = ((((uint32_t)t[k] << 10) + KYBER_Q/2)/ KYBER_Q) & 0x3ff; */
-                d0 = t[k];
-                d0 <<= 10;
-                d0 += 1665;
-                d0 *= 1290167;
+                
+                
+                d0 = t[k];  // d0에 t[k]값 저장
+                d0 <<= 10;  // * 2^d 진행
+                d0 += 1665; // 반올림을 위한 q + 1 / 2 더해주고
+                
+                // / kyber_q 대신 아래 2개를 진행해 줌
+                // q * 1290167 값은 2^32보다 작은 가장 큰 q의 곱 모양임 -> coef 값을 가장 42bit에 가깝게 함,    (2^32 : 4,294,967,296 , q * 1290167 : 4,294,965,943)
+                // -> 결국 하위 32bit를 버린다면 10bit가 남게 됨
+                d0 *= 1290167; 
                 d0 >>= 32;
+
                 t[k] = d0 & 0x3ff;
             }
 
@@ -1070,7 +1096,7 @@ int PQCLEAN_MLKEM512_CLEAN_verify(const uint8_t *a, const uint8_t *b, size_t len
         r |= a[i] ^ b[i];
     }
 
-    return (-(uint64_t)r) >> 63;
+    return (-(uint64_t)r) >> 63;    // 계산하는 방식만 바뀜 결론은 똑같음
 }
 
 
@@ -1129,31 +1155,34 @@ void PQCLEAN_MLKEM512_CLEAN_indcpa_enc(uint8_t c[KYBER_INDCPA_BYTES], const uint
 
     for (i = 0; i < KYBER_K; i++) {
         PQCLEAN_MLKEM512_CLEAN_poly_getnoise_eta1(sp.vec + i, coins, nonce++);
-    }
+    }   // r 행렬 생성
+
     for (i = 0; i < KYBER_K; i++) {
         PQCLEAN_MLKEM512_CLEAN_poly_getnoise_eta2(ep.vec + i, coins, nonce++);
-    }
-    PQCLEAN_MLKEM512_CLEAN_poly_getnoise_eta2(&epp, coins, nonce++);
+    }   // e1 생성
 
-    PQCLEAN_MLKEM512_CLEAN_polyvec_ntt(&sp);
+    PQCLEAN_MLKEM512_CLEAN_poly_getnoise_eta2(&epp, coins, nonce++); // e2 생성
+
+    PQCLEAN_MLKEM512_CLEAN_polyvec_ntt(&sp); // r 행렬 NTT도메인으로 변경
 
     // matrix-vector multiplication
     for (i = 0; i < KYBER_K; i++) {
         PQCLEAN_MLKEM512_CLEAN_polyvec_basemul_acc_montgomery(&b.vec[i], &at[i], &sp);
-    }
+    }   // A * r
 
-    PQCLEAN_MLKEM512_CLEAN_polyvec_basemul_acc_montgomery(&v, &pkpv, &sp);
+    PQCLEAN_MLKEM512_CLEAN_polyvec_basemul_acc_montgomery(&v, &pkpv, &sp); // t * r
 
-    PQCLEAN_MLKEM512_CLEAN_polyvec_invntt_tomont(&b);
-    PQCLEAN_MLKEM512_CLEAN_poly_invntt_tomont(&v);
+    PQCLEAN_MLKEM512_CLEAN_polyvec_invntt_tomont(&b);       // A * r 일반 다항식으로 변경
+    PQCLEAN_MLKEM512_CLEAN_poly_invntt_tomont(&v);          // t * r 일반 다항식으로 변경
 
-    PQCLEAN_MLKEM512_CLEAN_polyvec_add(&b, &b, &ep);
-    PQCLEAN_MLKEM512_CLEAN_poly_add(&v, &v, &epp);
-    PQCLEAN_MLKEM512_CLEAN_poly_add(&v, &v, &k);
-    PQCLEAN_MLKEM512_CLEAN_polyvec_reduce(&b);
+    PQCLEAN_MLKEM512_CLEAN_polyvec_add(&b, &b, &ep);        // A * r + e1
+    PQCLEAN_MLKEM512_CLEAN_poly_add(&v, &v, &epp);          // t * r + e2
+    PQCLEAN_MLKEM512_CLEAN_poly_add(&v, &v, &k);            // t * r + e2 + k*
+    
+    PQCLEAN_MLKEM512_CLEAN_polyvec_reduce(&b); 
     PQCLEAN_MLKEM512_CLEAN_poly_reduce(&v);
 
-    pack_ciphertext(c, &b, &v);
+    pack_ciphertext(c, &b, &v);     // compress, encode, c : ciphertext,  b : u,  v : v 
 }
 
 void PQCLEAN_MLKEM512_CLEAN_indcpa_dec(uint8_t m[KYBER_INDCPA_MSGBYTES], const uint8_t c[KYBER_INDCPA_BYTES], const uint8_t sk[KYBER_INDCPA_SECRETKEYBYTES]) 
@@ -1171,7 +1200,7 @@ void PQCLEAN_MLKEM512_CLEAN_indcpa_dec(uint8_t m[KYBER_INDCPA_MSGBYTES], const u
     PQCLEAN_MLKEM512_CLEAN_poly_sub(&mp, &v, &mp);
     PQCLEAN_MLKEM512_CLEAN_poly_reduce(&mp);
 
-    PQCLEAN_MLKEM512_CLEAN_poly_tomsg(m, &mp);
+    PQCLEAN_MLKEM512_CLEAN_poly_tomsg(m, &mp);  // encode (m*값을 m로 변경)
 }
 
 
@@ -1231,24 +1260,30 @@ int PQCLEAN_MLKEM512_CLEAN_crypto_kem_dec(uint8_t *ss, const uint8_t *ct, const 
     uint8_t buf[2 * KYBER_SYMBYTES];
     /* Will contain key, coins */
     uint8_t kr[2 * KYBER_SYMBYTES];
-    uint8_t cmp[KYBER_CIPHERTEXTBYTES + KYBER_SYMBYTES];
-    const uint8_t *pk = sk + KYBER_INDCPA_SECRETKEYBYTES;
+    uint8_t cmp[KYBER_CIPHERTEXTBYTES + KYBER_SYMBYTES];    // cmp에 하위 32byte가 추가로 생김
+    const uint8_t *pk = sk + KYBER_INDCPA_SECRETKEYBYTES;   
 
-    PQCLEAN_MLKEM512_CLEAN_indcpa_dec(buf, ct, sk);
+
+    PQCLEAN_MLKEM512_CLEAN_indcpa_dec(buf, ct, sk);         // buf에 message값 복호화
 
     /* Multitarget countermeasure for coins + contributory KEM */
-    memcpy(buf + KYBER_SYMBYTES, sk + KYBER_SECRETKEYBYTES - 2 * KYBER_SYMBYTES, KYBER_SYMBYTES);
-    hash_g(kr, buf, 2 * KYBER_SYMBYTES);
+    memcpy(buf + KYBER_SYMBYTES, sk + KYBER_SECRETKEYBYTES - 2 * KYBER_SYMBYTES, KYBER_SYMBYTES);   // H(pk)값을 가져오고 -> buf : m || H(pk)
+    hash_g(kr, buf, 2 * KYBER_SYMBYTES);    // m || H(pk)를 이용해서 K, r 을 만들어주고
 
     /* coins are in kr+KYBER_SYMBYTES */
     PQCLEAN_MLKEM512_CLEAN_indcpa_enc(cmp, buf, pk, kr + KYBER_SYMBYTES);
-
+    
+    
+    // 같으면 0, 다르면 1을 뱉는 함수
     fail = PQCLEAN_MLKEM512_CLEAN_verify(ct, cmp, KYBER_CIPHERTEXTBYTES);
 
     /* Compute rejection key */
-    rkprf(ss, sk + KYBER_SECRETKEYBYTES - KYBER_SYMBYTES, ct);
+    rkprf(ss, sk + KYBER_SECRETKEYBYTES - KYBER_SYMBYTES, ct);  // sk의 마지막 32byte(random 값), ciphertext를 이용해서 ss에 저장     J(z||c)
+
+    // 여기까지에서 true key K는 kr의 상위 32byte, rejction key는 ss임 
 
     /* Copy true key to return buffer if fail is false */
+    // fail이 0 -> kr을 ss에 저장, 1 -> 그대로
     PQCLEAN_MLKEM512_CLEAN_cmov(ss, kr, KYBER_SYMBYTES, (uint8_t) (1 - fail));
 
     return 0;
