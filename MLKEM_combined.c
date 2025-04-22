@@ -82,8 +82,6 @@ void PQCLEAN_MLKEM512_CLEAN_cmov(uint8_t *r, const uint8_t *x, size_t len, uint8
     // 브랜치 예측 공격을 방지하려는 최적화 기법으로, 분기 예측을 방지하고, 연산을 더 안정적으로 수행하려는 목적입니다.
     PQCLEAN_PREVENT_BRANCH_HACK(b);
 
-
-
     b = -b;
     for (i = 0; i < len; i++) {
         r[i] ^= b & (r[i] ^ x[i]);  // b가 1(fail = 0) 이라면 ss에 true key K를, b가 0(fail = 1) 이라면 rejection key ss를 그대로 사용함
@@ -1260,7 +1258,7 @@ int PQCLEAN_MLKEM512_CLEAN_crypto_kem_dec(uint8_t *ss, const uint8_t *ct, const 
     uint8_t buf[2 * KYBER_SYMBYTES];
     /* Will contain key, coins */
     uint8_t kr[2 * KYBER_SYMBYTES];
-    uint8_t cmp[KYBER_CIPHERTEXTBYTES + KYBER_SYMBYTES];    // cmp에 하위 32byte가 추가로 생김
+    uint8_t cmp[KYBER_CIPHERTEXTBYTES + KYBER_SYMBYTES];    // cmp에 하위 32byte가 추가로 생김 -> 이거 왜 생김 쓸모가 없는디
     const uint8_t *pk = sk + KYBER_INDCPA_SECRETKEYBYTES;   
 
 
