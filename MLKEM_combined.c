@@ -30,8 +30,6 @@
 
 #define randombytes(OUT, OUTLEN) rand2(OUT, OUTLEN)
 
-
-
 const int16_t PQCLEAN_MLKEM512_CLEAN_zetas[128] = {
     -1044,  -758,  -359, -1517,  1493,  1422,   287,   202,
     -171,   622,  1577,   182,   962, -1202, -1474,  1468,
@@ -50,6 +48,8 @@ const int16_t PQCLEAN_MLKEM512_CLEAN_zetas[128] = {
     -1185, -1530, -1278,   794, -1510,  -854,  -870,   478,
     -108,  -308,   996,   991,   958, -1460,  1522,  1628
 };
+
+
 static const uint64_t KeccakF_RoundConstants[NROUNDS] = {
     0x0000000000000001ULL, 0x0000000000008082ULL,
     0x800000000000808aULL, 0x8000000080008000ULL,
@@ -64,8 +64,6 @@ static const uint64_t KeccakF_RoundConstants[NROUNDS] = {
     0x8000000080008081ULL, 0x8000000000008080ULL,
     0x0000000080000001ULL, 0x8000000080008008ULL
 };
-
-
 
 void rand2(uint8_t* buf, int len)
 {
@@ -1286,8 +1284,6 @@ int PQCLEAN_MLKEM512_CLEAN_crypto_kem_dec(uint8_t *ss, const uint8_t *ct, const 
 
     return 0;
 }
-
-
 
 int main()
 {
