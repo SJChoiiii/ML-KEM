@@ -78,7 +78,7 @@ void PQCLEAN_MLKEM512_CLEAN_cmov(uint8_t *r, const uint8_t *x, size_t len, uint8
 
     // 컴파일러가 0 또는 1 값을 추론하여 분기문을 사용하지 않도록 방지하기 위한 목적으로 추가된 코드
     // 브랜치 예측 공격을 방지하려는 최적화 기법으로, 분기 예측을 방지하고, 연산을 더 안정적으로 수행하려는 목적입니다.
-    PQCLEAN_PREVENT_BRANCH_HACK(b);
+    //PQCLEAN_PREVENT_BRANCH_HACK(b);
 
     b = -b;
     for (i = 0; i < len; i++) {
@@ -813,7 +813,7 @@ void PQCLEAN_MLKEM512_CLEAN_poly_compress(uint8_t r[KYBER_POLYCOMPRESSEDBYTES], 
             
             
             d0 = u << 4;    // 32bit에 12bit를 4bit 왼쪽으로 shift 한 값을 저장
-            d0 += 1665;     // 반올림을 위해 q + 2 / 2 값을 더해주기
+            d0 += 1665;     // 반올림을 위해 q + 1 / 2 값을 더해주기
             
             // / kyber_q 대신 아래 2개를 진행해 줌
             // q * 80635의 값은 2^28보다 작은 가장 큰 q의 곱 모양임 -> coef 값을 가장 32bit에 가깝도록 함
@@ -1110,7 +1110,7 @@ void PQCLEAN_MLKEM512_CLEAN_indcpa_keypair_derand(uint8_t pk[KYBER_INDCPA_PUBLIC
     buf[KYBER_SYMBYTES] = KYBER_K;          // Kyber에서는 buf[0~31]까지만 채우고 G함수를 이용 but ML-KEM에서는 buf[32]에 Kyber_K값을 넣어주고
     hash_g(buf, buf, KYBER_SYMBYTES + 1);   // 32개의 값을 G함수에 넣는게 아니라 33개의 값을 G 함수에 넣어서 이용함
                                             // G 함수(SHA3_512)로 랜덤값을 Seed로 만들어줌 -> SHA3_512의 앞 32byte를 공개키의 seed값, 뒤 32byte를 noise의 seed값 으로 사용
-    
+
     gen_a(a, publicseed);                   // Kyber와 마찬가지로 NTT도메인에 올라간 상태로 a행렬 생성
 
     for (i = 0; i < KYBER_K; i++) {
@@ -1213,7 +1213,7 @@ int PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair_derand(uint8_t *pk, uint8_t *sk, c
 int PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair(uint8_t *pk, uint8_t *sk) 
 {
     uint8_t coins[2 * KYBER_SYMBYTES];          // random 값 저장하기 위한 coin값 추가
-    randombytes(coins, 2 * KYBER_SYMBYTES);     // random 값 생성
+    randombytes(coins, 2 * KYBER_SYMBYTES);     // random 값 생성 d -> A 행렬 생성 seed, s 행렬 생성 seed 를 생성하는 seed, z -> implicit rejection을 위한 random 값
     PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair_derand(pk, sk, coins);
     return 0;
 }
@@ -1314,7 +1314,11 @@ int main()
 	for (int i = 0; i < 32; i++) { 
 		printf("%02x ", ss2[i]);
 	}
+    free(pk);
+    free(sk);
 
+    
+    PQCLEAN_MLKEM512_CLEAN_crypto_kem_enc(ct, ss, pk);
 
 	return 0;
 }
