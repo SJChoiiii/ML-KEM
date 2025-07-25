@@ -1107,17 +1107,23 @@ void PQCLEAN_MLKEM512_CLEAN_indcpa_keypair_derand(uint8_t pk[KYBER_INDCPA_PUBLIC
     polyvec a[KYBER_K], e, pkpv, skpv;
 
     memcpy(buf, coins, KYBER_SYMBYTES);     // Kyber에서는 indcpa_keypair부분에서 random값을 생성했지만, ML-KEM에서는 이전에 coin값에 random값을 넣어놓고 그대로 사용함
+                                            // A 행렬 생성 seed, noise seed의 seed임
+
     buf[KYBER_SYMBYTES] = KYBER_K;          // Kyber에서는 buf[0~31]까지만 채우고 G함수를 이용 but ML-KEM에서는 buf[32]에 Kyber_K값을 넣어주고
+    
     hash_g(buf, buf, KYBER_SYMBYTES + 1);   // 32개의 값을 G함수에 넣는게 아니라 33개의 값을 G 함수에 넣어서 이용함
                                             // G 함수(SHA3_512)로 랜덤값을 Seed로 만들어줌 -> SHA3_512의 앞 32byte를 공개키의 seed값, 뒤 32byte를 noise의 seed값 으로 사용
+                                            
+                                            // 33번째 byte seed[32]는 module 차원으로, 세 가지 파라미터 세트 간의 도메인 분리를 보장하기 위해서 포함된 것임
+                                            // 비밀키 대신 seed를 사용하는 구간에서, 해당 byte로의 확장을 통해서 원래 의도와 다른 parameter set으로 잘못 확장되더라도, 무관한 키가 구성되도록 보장하는것
 
     gen_a(a, publicseed);                   // Kyber와 마찬가지로 NTT도메인에 올라간 상태로 a행렬 생성
 
     for (i = 0; i < KYBER_K; i++) {
-        PQCLEAN_MLKEM512_CLEAN_poly_getnoise_eta1(&skpv.vec[i], noiseseed, nonce++);
+        PQCLEAN_MLKEM512_CLEAN_poly_getnoise_eta1(&skpv.vec[i], noiseseed, nonce++);    // -3 ~ 3 범위의 비밀키를 생성
     }   // 비밀키 s 생성
     for (i = 0; i < KYBER_K; i++) {
-        PQCLEAN_MLKEM512_CLEAN_poly_getnoise_eta1(&e.vec[i], noiseseed, nonce++);
+        PQCLEAN_MLKEM512_CLEAN_poly_getnoise_eta1(&e.vec[i], noiseseed, nonce++);   // -3 ~ 3 범위의 에러값 생성
     }   // 에러 다항식 e 생성
 
     PQCLEAN_MLKEM512_CLEAN_polyvec_ntt(&skpv);  // s를 NTT 변환
@@ -1146,8 +1152,8 @@ void PQCLEAN_MLKEM512_CLEAN_indcpa_enc(uint8_t c[KYBER_INDCPA_BYTES], const uint
 
     unpack_pk(&pkpv, seed, pk);
     
-    PQCLEAN_MLKEM512_CLEAN_poly_frommsg(&k, m); //m의 값(message)을 k = m* 값(polynomial)로 변경, (Decompress_q(Decode_1(m), 1) 과정)
-    gen_at(at, seed);
+    PQCLEAN_MLKEM512_CLEAN_poly_frommsg(&k, m); // m의 값(message)을 k = m* 값(polynomial)로 변경, (Decompress_q(Decode_1(m), 1) 과정)
+    gen_at(at, seed);                           // A 행렬 생성해주고
 
     for (i = 0; i < KYBER_K; i++) {
         PQCLEAN_MLKEM512_CLEAN_poly_getnoise_eta1(sp.vec + i, coins, nonce++);
@@ -1186,15 +1192,15 @@ void PQCLEAN_MLKEM512_CLEAN_indcpa_dec(uint8_t m[KYBER_INDCPA_MSGBYTES], const u
     polyvec b, skpv;
     poly v, mp;
 
-    unpack_ciphertext(&b, &v, c);
-    unpack_sk(&skpv, sk);
+    unpack_ciphertext(&b, &v, c);       // u, v 복원
+    unpack_sk(&skpv, sk);               // sk 복원
 
-    PQCLEAN_MLKEM512_CLEAN_polyvec_ntt(&b);
-    PQCLEAN_MLKEM512_CLEAN_polyvec_basemul_acc_montgomery(&mp, &skpv, &b);
+    PQCLEAN_MLKEM512_CLEAN_polyvec_ntt(&b);         // hat_{u}
+    PQCLEAN_MLKEM512_CLEAN_polyvec_basemul_acc_montgomery(&mp, &skpv, &b);  // s * u
     PQCLEAN_MLKEM512_CLEAN_poly_invntt_tomont(&mp);
 
-    PQCLEAN_MLKEM512_CLEAN_poly_sub(&mp, &v, &mp);
-    PQCLEAN_MLKEM512_CLEAN_poly_reduce(&mp);
+    PQCLEAN_MLKEM512_CLEAN_poly_sub(&mp, &v, &mp);  // v - us
+    PQCLEAN_MLKEM512_CLEAN_poly_reduce(&mp);        
 
     PQCLEAN_MLKEM512_CLEAN_poly_tomsg(m, &mp);  // encode (m*값을 m로 변경)
 }
@@ -1214,7 +1220,7 @@ int PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair(uint8_t *pk, uint8_t *sk)
 {
     uint8_t coins[2 * KYBER_SYMBYTES];          // random 값 저장하기 위한 coin값 추가
     randombytes(coins, 2 * KYBER_SYMBYTES);     // random 값 생성 d -> A 행렬 생성 seed, s 행렬 생성 seed 를 생성하는 seed, z -> implicit rejection을 위한 random 값
-    PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair_derand(pk, sk, coins);
+    PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair_derand(pk, sk, coins);    // ML-KEM internal 함수 호출
     return 0;
 }
 
@@ -1245,7 +1251,7 @@ int PQCLEAN_MLKEM512_CLEAN_crypto_kem_enc_derand(uint8_t *ct, uint8_t *ss, const
 int PQCLEAN_MLKEM512_CLEAN_crypto_kem_enc(uint8_t *ct, uint8_t *ss, const uint8_t *pk) 
 {
     uint8_t coins[KYBER_SYMBYTES];
-    randombytes(coins, KYBER_SYMBYTES);
+    randombytes(coins, KYBER_SYMBYTES); // SSK seed 값 생성
     PQCLEAN_MLKEM512_CLEAN_crypto_kem_enc_derand(ct, ss, pk, coins);
     return 0;
 }
