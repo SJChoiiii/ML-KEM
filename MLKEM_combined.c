@@ -1280,7 +1280,7 @@ int PQCLEAN_MLKEM512_CLEAN_crypto_kem_dec(uint8_t *ss, const uint8_t *ct, const 
     fail = PQCLEAN_MLKEM512_CLEAN_verify(ct, cmp, KYBER_CIPHERTEXTBYTES);
 
     /* Compute rejection key */
-    rkprf(ss, sk + KYBER_SECRETKEYBYTES - KYBER_SYMBYTES, ct);  // sk의 마지막 32byte(random 값), ciphertext를 이용해서 ss에 저장     J(z||c)
+    rkprf(ss, sk + KYBER_SECRETKEYBYTES - KYBER_SYMBYTES, ct);  // sk의 마지막 32byte(random z 값), ciphertext를 이용해서 ss에 저장     J(z||c)
 
     // 여기까지에서 true key K는 kr의 상위 32byte, rejction key는 ss임 
 
